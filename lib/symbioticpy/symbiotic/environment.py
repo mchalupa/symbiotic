@@ -5,6 +5,8 @@ from os.path import isfile, isdir
 from . utils import err, dbg
 from . utils.utils import process_grep
 
+import re
+
 def _vers_are_same(v1, v2):
     parts1 = v1.split('.')
     parts2 = v2.split('.')
@@ -17,8 +19,11 @@ def _check_clang_in_path(llvm_version):
     if versline[0] != 0 or len(versline[1]) != 1:
         return False
 
-    parts = versline[1][0].split()
-    return _vers_are_same(parts[2].decode('utf-8'), llvm_version)
+    match = re.search(r'\d+\.\d+\.\d+', versline[1][0].decode())
+    if match is None:
+        err('Could not determine the clang version')
+
+    return _vers_are_same(match[0], llvm_version)
 
 def _set_symbiotic_environ(tool, env, opts):
     env.cwd = getcwd()

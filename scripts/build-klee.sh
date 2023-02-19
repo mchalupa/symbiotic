@@ -50,10 +50,25 @@ if [ ! -d CMakeFiles ]; then
 	else
 		ENABLE_TESTS="off"
 	fi
+	
+	case "$BUILD_TYPE" in
+		"Release" | "Debug")
+			KLEE_RUNTIME_BUILD_TYPE="$BUILD_TYPE"
+			;;
+		"MinSizeRel")
+			KLEE_RUNTIME_BUILD_TYPE="Release"
+			;;
+		"RelWithDebInfo")
+			KLEE_RUNTIME_BUILD_TYPE="Release+Debug"
+			;;
+		*)
+			exitmsg "Unknown CMake build type!"
+			;;
+	esac
 
 	cmake .. -DCMAKE_INSTALL_PREFIX=$LLVM_PREFIX \
 		-DCMAKE_BUILD_TYPE=${BUILD_TYPE}\
-		-DKLEE_RUNTIME_BUILD_TYPE=${BUILD_TYPE} \
+		-DKLEE_RUNTIME_BUILD_TYPE=${KLEE_RUNTIME_BUILD_TYPE} \
 		-DLLVM_CONFIG_BINARY=$(abspath ${LLVM_CONFIG}) \
 		-DENABLE_UNIT_TESTS=${ENABLE_TESTS} \
 		-DENABLE_SYSTEM_TESTS=${ENABLE_TESTS} \
@@ -68,30 +83,16 @@ if [ "$UPDATE" = "1" ]; then
 	git pull
 fi
 
-# clean runtime libs, it may be 32-bit from last build
-make -C runtime -f Makefile.cmake.bitcode clean 2>/dev/null
-
-# build 64-bit libs and install them to prefix
+# build 32-bit and 64-bit libs and install them to prefix
 (build && make install) || exit 1
 
 mv $LLVM_PREFIX/lib64/klee $LLVM_PREFIX/lib/klee || true
 rmdir $LLVM_PREFIX/lib64 || true
 
-# clean 64-bit build and build 32-bit version of runtime library
-make -C runtime -f Makefile.cmake.bitcode clean \
-	|| exitmsg "Failed building klee 32-bit runtime library"
-
-# EXTRA_LLVMCC.Flags is obsolete and to be removed soon
-make -C runtime -f Makefile.cmake.bitcode \
-	LLVMCC.ExtraFlags=-m32 \
-	EXTRA_LLVMCC.Flags=-m32 \
-	|| exitmsg "Failed building 32-bit klee runtime library"
-
-# copy 32-bit library version to prefix
+# move 32-bit library version to correct prefix
 mkdir -p $LLVM_PREFIX/lib32/klee/runtime
-cp ${BUILD_TYPE}/lib/*.bc* \
-	$LLVM_PREFIX/lib32/klee/runtime/ \
-	|| exitmsg "Did not build 32-bit klee runtime lib"
+mv $LLVM_PREFIX/lib/klee/runtime/*32*.bc* \
+	$LLVM_PREFIX/lib32/klee/runtime/ || exit 1
 
 popd
 

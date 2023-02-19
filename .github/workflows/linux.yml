@@ -16,34 +16,26 @@ jobs:
       matrix:
         include:
           # Linux with GCC
-          # - {os: ubuntu-18.04, llvm: '3.9', compiler: gcc}
-          # - {os: ubuntu-18.04, llvm: '4.0', compiler: gcc}
-          # - {os: ubuntu-18.04, llvm: '5.0', compiler: gcc}
           - {os: ubuntu-18.04, llvm: '6.0', compiler: gcc}
           - {os: ubuntu-18.04, llvm: 7, compiler: gcc}
           - {os: ubuntu-18.04, llvm: 8, compiler: gcc}
           - {os: ubuntu-18.04, llvm: 9, compiler: gcc}
           - {os: ubuntu-20.04, llvm: 10, compiler: gcc}
           - {os: ubuntu-20.04, llvm: 10, compiler: gcc, type: Debug}
-          # FIXME: Edit when KLEE is rebased to latest upstream.
-          - {os: ubuntu-20.04, llvm: 11, compiler: gcc, klee: 'no-klee'}
-          - {os: ubuntu-20.04, llvm: 12, compiler: gcc, klee: 'no-klee'}
-          - {os: ubuntu-22.04, llvm: 13, compiler: gcc, klee: 'no-klee'}
+          - {os: ubuntu-20.04, llvm: 11, compiler: gcc}
+          - {os: ubuntu-20.04, llvm: 12, compiler: gcc}
+          - {os: ubuntu-22.04, llvm: 13, compiler: gcc}
 
           # Linux with Clang
-          # - {os: ubuntu-18.04, llvm: '3.9', compiler: clang}
-          # - {os: ubuntu-18.04, llvm: '4.0', compiler: clang}
-          # - {os: ubuntu-18.04, llvm: '5.0', compiler: clang}
           - {os: ubuntu-18.04, llvm: '6.0', compiler: clang}
           - {os: ubuntu-18.04, llvm: 7, compiler: clang}
           - {os: ubuntu-18.04, llvm: 8, compiler: clang}
           - {os: ubuntu-18.04, llvm: 9, compiler: clang}
           - {os: ubuntu-20.04, llvm: 10, compiler: clang}
           - {os: ubuntu-20.04, llvm: 10, compiler: clang, type: Debug}
-          # FIXME: Edit when KLEE is rebased to latest upstream.
-          - {os: ubuntu-20.04, llvm: 11, compiler: clang, klee: 'no-klee'}
-          - {os: ubuntu-20.04, llvm: 12, compiler: clang, klee: 'no-klee'}
-          - {os: ubuntu-22.04, llvm: 13, compiler: clang, klee: 'no-klee'}
+          - {os: ubuntu-20.04, llvm: 11, compiler: clang}
+          - {os: ubuntu-20.04, llvm: 12, compiler: clang}
+          - {os: ubuntu-22.04, llvm: 13, compiler: clang}
 
     runs-on: ${{matrix.os}}
     steps:
@@ -68,7 +60,7 @@ jobs:
         run: |
           sudo apt update
           sudo apt install ccache cmake clang-${{matrix.llvm}} \
-                           llvm-${{matrix.llvm}}-dev libc6-dev-i386 \
+                           llvm-${{matrix.llvm}}-dev gcc-multilib \
                            libz3-dev
 
       - name: Set environment
@@ -96,9 +88,22 @@ jobs:
             CC="clang-${{matrix.llvm}}"
             CXX="clang++-${{matrix.llvm}}"
 
-            # Use shared libasan otherwise LLVMsbt.so would be underlinked.
-            CFLAGS="-shared-libasan $CFLAGS"
-            CXXFLAGS="-shared-libasan $CXXFLAGS"
+            # ASAN, glibc 2.27+ and clang 6.0 == SIGSEGV
+            # https://github.com/google/sanitizers/issues/954
+            if [[ "${{matrix.llvm}}" == "6.0" ]]; then
+              # Disable ASAN
+              CFLAGS="-fsanitize=undefined -g -fno-omit-frame-pointer"
+              CXXFLAGS="-fsanitize=undefined -g -fno-omit-frame-pointer"
+              LDFLAGS="-fsanitize=undefined"
+            else
+              # Use shared libasan otherwise LLVMsbt.so would be underlinked.
+              CFLAGS="-shared-libasan $CFLAGS"
+              CXXFLAGS="-shared-libasan $CXXFLAGS"
+            fi
+
+            # Dynamic compiler-rt libraries are not in /usr/lib
+            tmp="$(clang-${{matrix.llvm}} -print-file-name=libclang_rt.asan-x86_64.so)"
+            LD_LIBRARY_PATH="$(dirname "$tmp")"
 
             # Force coloured output
             CFLAGS="-fcolor-diagnostics $CFLAGS"
@@ -119,6 +124,7 @@ jobs:
           echo "CFLAGS=$CFLAGS" >> $GITHUB_ENV
           echo "CXXFLAGS=$CXXFLAGS" >> $GITHUB_ENV
           echo "LDFLAGS=$LDFLAGS" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >> $GITHUB_ENV
 
           # Set up ccache
           sudo /usr/sbin/update-ccache-symlinks
@@ -148,15 +154,11 @@ jobs:
                             llvm-config=$(which llvm-config-${{matrix.llvm}})
 
       - name: Run tests
-        # FIXME: Remove when KLEE is rebased to latest upstream.
-        if: matrix.llvm < 11
         run: |
           if [[ "${{matrix.compiler}}" = "clang" ]]; then
             # * libclang_rt.asan-x86_64.so must be loaded as the first library
-            # * other compiler_rt libraries are not in /usr/lib
             # See https://systemd.io/TESTING_WITH_SANITIZERS for details.
             export LD_PRELOAD="$(clang-${{matrix.llvm}} -print-file-name=libclang_rt.asan-x86_64.so)"
-            export LD_LIBRARY_PATH="$(dirname $LD_PRELOAD)"
           else
             export LD_PRELOAD="$(gcc -print-file-name=libasan.so)"
           fi
