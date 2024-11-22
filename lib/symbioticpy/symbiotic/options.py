@@ -457,7 +457,6 @@ where OPTS can be following:
                                  by providing a string when-opt-what, e.g. before-opt-iconstprop
     --no-optimize                Don't optimize the code (same as --optimize=none)
     --no-instrument              Don't instrument the code, for debugging.
-    --libc=klee                  Link klee-libc.bc to the module
     --repeat-slicing=N           Repeat slicing N times
     --prp=property               Specify property that should hold. It is either LTL formula
                                  as specivied by SV-COMP, or one of following shortcuts:
