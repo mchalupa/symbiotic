@@ -277,7 +277,11 @@ if [ -z "$LLVM_DIR" ]; then
 fi
 
 # detect the link type of LLVM that we use
-if [ "$($LLVM_CONFIG --shared-mode --libs)" = "shared" ]; then
+if [ "$($LLVM_CONFIG --shared-mode --libs)" = "shared" ] || \
+        # TODO: $LLVM_CONFIG --shared-mode is broken on macOS:
+        # https://bugs.llvm.org/show_bug.cgi?id=40252
+        # This workaround won't be needed when we switch to CMake.
+        stat "$LLVM_LIB_DIR"/libLLVM.dylib; then
     LLVM_DYLIB="on"
 else
     LLVM_DYLIB="off"

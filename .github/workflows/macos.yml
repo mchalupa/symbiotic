@@ -1,0 +1,63 @@
+---
+name: macOS CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ubuntu:
+    name: "macOS (llvm: ${{matrix.llvm}}, build: ${{matrix.build}})"
+    strategy:
+      fail-fast: false
+      matrix:
+        llvm: [9]
+        build: ['RelWithDebInfo', 'Debug']
+
+    runs-on: macos-latest
+    env:
+      CC: clang
+      CXX: clang++
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Install dependencies
+        # FIXME: we should not depend on GNU coreutils
+        run: brew install coreutils ccache llvm@${{matrix.llvm}} z3
+
+      - name: Set environment
+        id: env
+        run: |
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >> $GITHUB_ENV
+          echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> $GITHUB_ENV
+          echo "CCACHE_COMPRESS=true" >> $GITHUB_ENV
+          echo "CCACHE_COMPRESSLEVEL=6" >> $GITHUB_ENV
+          echo "CCACHE_MAXSIZE=400M" >> $GITHUB_ENV
+
+          echo "/usr/local/opt/ccache/libexec" >> $GITHUB_PATH
+
+          echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%S%z)" >> $GITHUB_OUTPUT
+
+      - name: Set up ccache
+        uses: actions/cache@v3
+        with:
+          path: .ccache
+          key: macos-${{matrix.llvm}}-${{matrix.build}}-${{steps.env.outputs.timestamp}}
+          restore-keys: macos-${{matrix.llvm}}-${{matrix.build}}
+
+      - name: Build Symbiotic
+        run: |
+          ./system-build.sh -j"$(sysctl -n hw.logicalcpu)" build-type=${{matrix.build}} \
+              llvm-config="$(brew --prefix llvm@${{matrix.llvm}})/bin/llvm-config"
+
+      - name: Run tests
+        run: make -C tests
+
+      - name: ccache statistics
+        run: ccache -s
